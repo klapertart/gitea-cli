@@ -8,12 +8,13 @@
 
 1. [Prasyarat](#prasyarat)
 2. [Instalasi](#instalasi)
-3. [Login ke server Gitea](#login-ke-server-gitea)
-4. [Pemakaian dasar](#pemakaian-dasar)
-5. [Catatan keamanan untuk AI agent](#catatan-keamanan-untuk-ai-agent)
-6. [Pemecahan masalah](#pemecahan-masalah)
-7. [Metode instalasi lain](#metode-instalasi-lain)
-8. [Referensi](#referensi)
+3. [Membuat Access Token di Gitea](#membuat-access-token-di-gitea)
+4. [Login ke server Gitea](#login-ke-server-gitea)
+5. [Pemakaian dasar](#pemakaian-dasar)
+6. [Catatan keamanan untuk AI agent](#catatan-keamanan-untuk-ai-agent)
+7. [Pemecahan masalah](#pemecahan-masalah)
+8. [Metode instalasi lain](#metode-instalasi-lain)
+9. [Referensi](#referensi)
 
 ## Prasyarat
 
@@ -66,25 +67,116 @@ tea --version
 
 Jika versi tampil, instalasi selesai. Bila `tea` dipakai oleh IDE atau agent (misalnya Antigravity), **restart IDE tersebut** agar membaca PATH yang baru.
 
+## Membuat Access Token di Gitea
+
+`tea` masuk ke server Gitea memakai Access Token. Token berperan seperti kunci akses atas nama akun pemiliknya, dengan batas yang bisa Anda tentukan lewat *scope*.
+
+### Langkah membuat token
+
+1. Login ke Gitea lewat browser dengan akun yang akan dipakai (untuk agent, sebaiknya akun khusus agent).
+2. Klik foto profil di pojok kanan atas, pilih **Settings**.
+3. Buka tab **Applications**, lalu cari bagian **Manage Access Tokens**.
+4. Di **Generate New Token**, isi **Token Name** dengan nama yang menjelaskan fungsinya, misalnya `agent-tea-laptop`.
+5. Tentukan **Repository and Organization Access** (lihat bagian berikutnya).
+6. Atur level izin untuk tiap kategori (lihat tabel di bawah).
+7. Klik **Generate Token**.
+8. **Salin nilai token saat itu juga.** Nilainya muncul di bagian atas halaman, berupa string panjang acak, dan **hanya ditampilkan sekali**.
+
+> **Penting:** yang tampil di daftar token setelahnya hanyalah **nama**-nya. Gitea hanya menyimpan hash token, sehingga nilainya tidak bisa dilihat lagi. Menempelkan nama token ke `tea` akan menghasilkan error `user does not exist`. Jika nilainya terlewat, hapus token itu dan buat yang baru.
+
+### Repository and Organization Access
+
+| Pilihan | Artinya |
+|---|---|
+| **Public only** | Token hanya bisa menjangkau repo publik |
+| **All (public, private, and limited)** | Token bisa menjangkau semua repo dan organisasi yang bisa diakses akun pemiliknya |
+
+Pilihan ini hanya dua opsi di sebagian besar versi Gitea, tanpa opsi memilih repo tertentu. Karena itu, pembatasan ke repo tertentu sebaiknya dilakukan lewat **izin akun** (collaborator atau team), bukan lewat token. Lihat [Catatan keamanan](#catatan-keamanan-untuk-ai-agent).
+
+### Kategori izin (scope)
+
+Tiap kategori punya tiga level: **No Access**, **Read**, atau **Read and Write**.
+
+| Kategori | Cakupan | Dipakai `tea` untuk |
+|---|---|---|
+| `user` | Profil akun | Verifikasi login (`tea login add`, `tea whoami`). **Wajib minimal Read** |
+| `issue` | Issue, komentar, label, milestone | Membuat, membaca, dan mengubah issue |
+| `repository` | Repo, file, branch, pull request, release | Membaca repo dan PR, mengirim review, merge, release |
+| `organization` | Organisasi dan team | Mengakses repo yang berada di bawah organisasi |
+| `notification` | Notifikasi | Membaca notifikasi (opsional) |
+| `misc` | Endpoint umum seperti info versi server | Sebaiknya Read |
+| `package` | Package registry | Umumnya tidak diperlukan |
+| `activitypub` | Federasi ActivityPub | Umumnya tidak diperlukan |
+
+> **Catatan:** operasi pull request (baca, review, merge) masuk ke kategori `repository`, bukan `issue`, sepengetahuan saya. Akibatnya, token yang boleh mengirim review juga secara teknis boleh melakukan push dan merge. Batas yang sebenarnya dipaksakan server ada di izin akun, bukan di scope token. Verifikasi di instance Anda.
+
+### Profil token yang disarankan
+
+Pilih sesuai kebutuhan, mulai dari yang paling ketat.
+
+**A. Hanya membaca** (melihat issue dan PR, tanpa mengubah apa pun)
+
+| Kategori | Level |
+|---|---|
+| user | Read |
+| issue | Read |
+| repository | Read |
+| organization | Read |
+| misc | Read |
+| lainnya | No Access |
+
+**B. Mengelola issue, review PR dibuat manual** (agent boleh buat dan ubah issue, tidak boleh review)
+
+| Kategori | Level |
+|---|---|
+| user | Read |
+| issue | Read and Write |
+| repository | Read |
+| organization | Read |
+| misc | Read |
+| lainnya | No Access |
+
+**C. Mengelola issue dan mereview PR** (buat issue, ubah status, baca PR, approve atau reject)
+
+| Kategori | Level |
+|---|---|
+| user | Read |
+| issue | Read and Write |
+| repository | Read and Write |
+| organization | Read |
+| notification | Read |
+| misc | Read |
+| package, activitypub | No Access |
+
+Profil C membutuhkan `repository: Read and Write`, sehingga izin akun (team dengan Code = Read) dan branch protection menjadi pembatas utamanya. Untuk akun agent, profil C **hanya aman bila dipasangkan dengan izin akun yang dibatasi**.
+
+### Kelola token yang sudah ada
+
+- **Mencabut token:** di **Settings → Applications → Manage Access Tokens**, klik tombol **Delete** di samping token. Akses langsung hilang.
+- **Masa berlaku:** jika form Anda menyediakan kolom kedaluwarsa, isi. Sebagian versi Gitea tidak menampilkannya. Bila tidak ada, ganti token secara berkala.
+- **Token lama yang tidak dipakai:** hapus. Token berusia lama dengan akses luas dan tanpa aktivitas hanya menambah risiko.
+- **Satu token per fungsi:** jangan memakai satu token untuk banyak alat. Bila satu bocor, cukup cabut yang itu.
+
+### Uji token sebelum dipakai
+
+Cek bahwa token valid dan scope-nya cukup, tanpa `tea`:
+
+```powershell
+$env:GITEA_TOKEN = "<nilai-token>"
+curl.exe -s -H "Authorization: token $env:GITEA_TOKEN" https://<host-gitea-anda>/api/v1/user
+```
+
+| Hasil | Artinya |
+|---|---|
+| JSON berisi `login`, `email`, dst. | Token valid, scope `user` cukup |
+| `token does not have at least one of required scope(s)` | Tambahkan scope `user: Read` |
+| `401` atau `user does not exist` | Nilai token salah atau sudah dicabut |
+
 ## Login ke server Gitea
 
-### 1. Buat Access Token
+Pastikan Anda sudah memiliki **nilai** token dari bagian [Membuat Access Token di Gitea](#membuat-access-token-di-gitea).
 
-Di browser, login ke Gitea lalu buka **Settings → Applications → Manage Access Tokens** dan buat token baru.
-
-Scope yang disarankan untuk kebutuhan issue dan review PR:
-
-| Scope | Level | Keterangan |
-|---|---|---|
-| user | Read | Wajib, dipakai `tea` untuk memverifikasi login |
-| issue | Read and Write | Membuat dan mengubah issue, komentar, label |
-| repository | Read and Write | Dibutuhkan untuk membaca PR dan mengirim review |
-| organization | Read | Bila repo berada di bawah organisasi |
-| lainnya | No Access | Aktifkan hanya jika benar-benar perlu |
-
-> **Penting:** nilai token hanya ditampilkan **satu kali**, tepat setelah klik *Generate Token*. Yang tampil di daftar token hanyalah **nama**-nya. Menempelkan nama token ke `tea` akan menghasilkan error `user does not exist`. Jika nilainya terlewat, buat token baru.
-
-### 2. Daftarkan login
+### Daftarkan login
 
 ```powershell
 $env:GITEA_TOKEN = "<nilai-token>"
@@ -138,13 +230,7 @@ Uji batas izin sebelum dipakai sungguhan: pastikan `git push` dan merge PR **dit
 | Prompt `no login matched this repository` | Remote repo tidak cocok dengan URL login (repo GitHub, atau host/port berbeda) | Tambahkan `--login <nama-login>`, atau samakan host remote dengan URL login |
 | File `.exe` diblokir Windows | Tanda unduhan dari internet | `Unblock-File C:\tools\tea\tea.exe` |
 
-Untuk memeriksa token tanpa `tea`:
-
-```powershell
-curl.exe -s -H "Authorization: token $env:GITEA_TOKEN" https://<host-gitea-anda>/api/v1/user
-```
-
-Respons JSON berisi `login` berarti token valid.
+Untuk memeriksa token tanpa `tea`, lihat [Uji token sebelum dipakai](#uji-token-sebelum-dipakai).
 
 ## Metode instalasi lain
 
